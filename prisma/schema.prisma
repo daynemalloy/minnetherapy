@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -16,7 +16,7 @@ model User {
   email         String    @unique
   emailVerified DateTime?
   password      String?
-  role          UserRole
+  role          String
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -33,12 +33,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -84,12 +84,12 @@ model Provider {
   city              String
   state             String              @default("MN")
   zipCode           String
-  bio               String?             @db.Text
+  bio               String?
   profileImageUrl   String?
   yearsOfExperience Int?
   latitude          Float?
   longitude         Float?
-  membershipType    MembershipType      @default(FREE)
+  membershipType    String              @default("FREE")
   isVerified        Boolean             @default(false)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
@@ -138,8 +138,8 @@ model Appointment {
   date       DateTime
   startTime  String            // HH:MM format
   endTime    String            // HH:MM format
-  status     AppointmentStatus @default(PENDING)
-  notes      String?           @db.Text
+  status     String            @default("PENDING")
+  notes      String?
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
 
@@ -152,7 +152,7 @@ model Message {
   id         String   @id @default(cuid())
   patientId  String
   providerId String
-  content    String   @db.Text
+  content    String
   senderId   String   // Can be either patient or provider ID
   isRead     Boolean  @default(false)
   createdAt  DateTime @default(now())
@@ -168,7 +168,7 @@ model ForumPost {
   id         String         @id @default(cuid())
   providerId String
   title      String
-  content    String         @db.Text
+  content    String
   isPinned   Boolean        @default(false)
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
@@ -182,7 +182,7 @@ model ForumComment {
   id         String   @id @default(cuid())
   postId     String
   providerId String
-  content    String   @db.Text
+  content    String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -191,21 +191,7 @@ model ForumComment {
   provider Provider  @relation(fields: [providerId], references: [id])
 }
 
-// Enums
-enum UserRole {
-  PATIENT
-  PROVIDER
-  ADMIN
-}
-
-enum MembershipType {
-  FREE
-  PREMIUM
-}
-
-enum AppointmentStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-  COMPLETED
-}
+// Note: Using strings instead of enums for SQLite compatibility
+// UserRole: "PATIENT" | "PROVIDER" | "ADMIN"
+// MembershipType: "FREE" | "PREMIUM"
+// AppointmentStatus: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED"

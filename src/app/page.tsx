@@ -42,7 +42,7 @@ export default function Home() {
               Connect with qualified OT professionals in Minnesota
             </p>
             <div className="flex justify-center gap-4">
-              <Link href="/register">
+              <Link href="/find-therapist">
                 <Button size="lg">Find a Therapist</Button>
               </Link>
               <Link href="/register?role=provider">
@@ -95,7 +95,7 @@ export default function Home() {
             <p className="mb-8 text-xl text-muted-foreground">
               Join thousands of patients and providers in Minnesota
             </p>
-            <Link href="/register">
+            <Link href="/find-therapist">
               <Button size="lg">Get Started Today</Button>
             </Link>
           </div>
