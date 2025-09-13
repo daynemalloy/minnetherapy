@@ -1,0 +1,211 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  role          UserRole
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts Account[]
+  sessions Session[]
+  patient  Patient?
+  provider Provider?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Patient {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  firstName String
+  lastName  String
+  phone     String?
+  address   String?
+  city      String?
+  state     String?
+  zipCode   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  messages     Message[]     @relation("PatientMessages")
+}
+
+model Provider {
+  id                String              @id @default(cuid())
+  userId            String              @unique
+  firstName         String
+  lastName          String
+  licenseNumber     String              @unique
+  phone             String
+  address           String
+  city              String
+  state             String              @default("MN")
+  zipCode           String
+  bio               String?             @db.Text
+  profileImageUrl   String?
+  yearsOfExperience Int?
+  latitude          Float?
+  longitude         Float?
+  membershipType    MembershipType      @default(FREE)
+  isVerified        Boolean             @default(false)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  // Relations
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specializations  ProviderSpecialization[]
+  appointments     Appointment[]
+  messages         Message[]             @relation("ProviderMessages")
+  forumPosts       ForumPost[]
+  forumComments    ForumComment[]
+  availability     ProviderAvailability[]
+}
+
+model Specialization {
+  id          String                   @id @default(cuid())
+  name        String                   @unique
+  description String?
+  providers   ProviderSpecialization[]
+}
+
+model ProviderSpecialization {
+  providerId       String
+  specializationId String
+  provider         Provider       @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  specialization   Specialization @relation(fields: [specializationId], references: [id])
+
+  @@id([providerId, specializationId])
+}
+
+model ProviderAvailability {
+  id         String   @id @default(cuid())
+  providerId String
+  dayOfWeek  Int      // 0-6 (Sunday-Saturday)
+  startTime  String   // HH:MM format
+  endTime    String   // HH:MM format
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, dayOfWeek, startTime])
+}
+
+model Appointment {
+  id         String            @id @default(cuid())
+  patientId  String
+  providerId String
+  date       DateTime
+  startTime  String            // HH:MM format
+  endTime    String            // HH:MM format
+  status     AppointmentStatus @default(PENDING)
+  notes      String?           @db.Text
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  // Relations
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  provider Provider @relation(fields: [providerId], references: [id])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  patientId  String
+  providerId String
+  content    String   @db.Text
+  senderId   String   // Can be either patient or provider ID
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  // Relations
+  patient  Patient  @relation("PatientMessages", fields: [patientId], references: [id])
+  provider Provider @relation("ProviderMessages", fields: [providerId], references: [id])
+
+  @@index([patientId, providerId])
+}
+
+model ForumPost {
+  id         String         @id @default(cuid())
+  providerId String
+  title      String
+  content    String         @db.Text
+  isPinned   Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  // Relations
+  provider Provider       @relation(fields: [providerId], references: [id])
+  comments ForumComment[]
+}
+
+model ForumComment {
+  id         String   @id @default(cuid())
+  postId     String
+  providerId String
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  post     ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  provider Provider  @relation(fields: [providerId], references: [id])
+}
+
+// Enums
+enum UserRole {
+  PATIENT
+  PROVIDER
+  ADMIN
+}
+
+enum MembershipType {
+  FREE
+  PREMIUM
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
