@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 declare global {
   interface Window {
     google: any
+    initMap?: () => void
   }
 }
 
@@ -31,164 +32,277 @@ interface TherapistMapProps {
 }
 
 export function TherapistMap({ therapists, className = '' }: TherapistMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const [map, setMap] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null)
+  const [loading, setLoading] = useState(false)  // Changed to false initially
   const [error, setError] = useState<string | null>(null)
+  const [isScriptLoaded, setIsScriptLoaded] = useState(false)
 
-  useEffect(() => {
-    const initMap = async () => {
-      try {
-        setLoading(true)
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 
-        // Load Google Maps script manually
-        if (!window.google) {
-          const script = document.createElement('script')
-          script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`
-          script.async = true
-          script.defer = true
-          document.head.appendChild(script)
-
-          await new Promise((resolve) => {
-            script.onload = resolve
-          })
-        }
-
-        if (!mapRef.current) return
-
-        // Center on Minnesota (Minneapolis-St. Paul area)
-        const minnesotaCenter = { lat: 44.9778, lng: -93.2650 }
-
-        // Create map
-        const mapInstance = new google.maps.Map(mapRef.current, {
-          center: minnesotaCenter,
-          zoom: 8,
-          styles: [
-            {
-              featureType: 'poi.business',
-              stylers: [{ visibility: 'off' }]
-            },
-            {
-              featureType: 'poi.medical',
-              stylers: [{ visibility: 'simplified' }]
-            }
-          ]
-        })
-
-        setMap(mapInstance)
-
-        // Add markers for therapists with location data
-        const validTherapists = therapists.filter(t => t.latitude && t.longitude)
-
-        validTherapists.forEach(therapist => {
-          if (!therapist.latitude || !therapist.longitude) return
-
-          // Create standard marker
-          const marker = new google.maps.Marker({
-            map: mapInstance,
-            position: { lat: therapist.latitude, lng: therapist.longitude },
-            title: `${therapist.firstName} ${therapist.lastName}`,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 12,
-              fillColor: '#3b82f6',
-              fillOpacity: 1,
-              strokeColor: '#ffffff',
-              strokeWeight: 2
-            }
-          })
-
-          // Create info window
-          const infoWindow = new google.maps.InfoWindow({
-            content: `
-              <div class="p-4 max-w-sm">
-                <h3 class="font-semibold text-lg mb-2">${therapist.firstName} ${therapist.lastName}</h3>
-                <p class="text-sm text-gray-600 mb-2">${therapist.address}<br>${therapist.city}, ${therapist.state}</p>
-                <div class="mb-3">
-                  <p class="text-sm font-medium mb-1">Specializations:</p>
-                  <div class="flex flex-wrap gap-1">
-                    ${therapist.specializations.map(spec =>
-                      `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">${spec.specialization.name}</span>`
-                    ).join('')}
-                  </div>
-                </div>
-                <div class="flex gap-2">
-                  <button class="bg-primary text-white text-xs px-3 py-1 rounded hover:bg-primary/90">
-                    View Profile
-                  </button>
-                  <button class="border border-gray-300 text-gray-700 text-xs px-3 py-1 rounded hover:bg-gray-50">
-                    Message
-                  </button>
-                </div>
-              </div>
-            `
-          })
-
-          // Add click listener to marker
-          marker.addListener('click', () => {
-            infoWindow.open(mapInstance, marker)
-          })
-        })
-
-        // Adjust map bounds to fit all markers if there are therapists
-        if (validTherapists.length > 0) {
-          const bounds = new google.maps.LatLngBounds()
-          validTherapists.forEach(therapist => {
-            if (therapist.latitude && therapist.longitude) {
-              bounds.extend({ lat: therapist.latitude, lng: therapist.longitude })
-            }
-          })
-          mapInstance.fitBounds(bounds)
-
-          // Ensure minimum zoom level
-          const listener = google.maps.event.addListener(mapInstance, 'bounds_changed', () => {
-            if (mapInstance.getZoom()! > 12) {
-              mapInstance.setZoom(12)
-            }
-            google.maps.event.removeListener(listener)
-          })
-        }
-
-        setLoading(false)
-      } catch (err) {
-        console.error('Error loading map:', err)
-        setError('Failed to load map. Please check your Google Maps API key.')
-        setLoading(false)
-      }
-    }
-
-    if (mapRef.current) {
-      initMap()
-    }
-  }, [therapists])
-
-  if (loading) {
-    return (
-      <div className={`flex items-center justify-center h-96 bg-gray-100 rounded-lg ${className}`}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading map...</p>
-        </div>
-      </div>
-    )
+  // Callback ref to capture the div element
+  const mapRef = (element: HTMLDivElement | null) => {
+    console.log('mapRef callback called with element:', !!element)
+    setMapContainer(element)
   }
 
-  if (error) {
+  // Check if API key is available
+  useEffect(() => {
+    console.log('API Key available:', !!apiKey)
+    console.log('Map component mounted, therapists count:', therapists.length)
+  }, [apiKey, therapists.length])
+
+  const loadGoogleMapsScript = () => {
+    return new Promise((resolve, reject) => {
+      // Check if Google Maps is already loaded
+      if (window.google && window.google.maps) {
+        console.log('Google Maps already loaded')
+        resolve(window.google.maps)
+        return
+      }
+
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[data-google-maps="true"]')
+      if (existingScript) {
+        console.log('Google Maps script already in DOM, waiting...')
+        const checkLoaded = setInterval(() => {
+          if (window.google && window.google.maps) {
+            clearInterval(checkLoaded)
+            resolve(window.google.maps)
+          }
+        }, 100)
+
+        // Add timeout for waiting
+        setTimeout(() => {
+          clearInterval(checkLoaded)
+          reject(new Error('Timeout waiting for Google Maps to load'))
+        }, 10000)
+        return
+      }
+
+      console.log('Loading Google Maps script...')
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+      script.async = true
+      script.defer = true
+      script.setAttribute('data-google-maps', 'true')
+
+      script.onload = () => {
+        console.log('Google Maps script loaded successfully')
+        // Check if there are any immediate API errors
+        setTimeout(() => {
+          if (window.google && window.google.maps) {
+            resolve(window.google.maps)
+          } else {
+            reject(new Error('Google Maps API failed to initialize'))
+          }
+        }, 100)
+      }
+
+      script.onerror = (error) => {
+        console.error('Failed to load Google Maps script:', error)
+        reject(new Error('Failed to load Google Maps script - check your API key'))
+      }
+
+      document.head.appendChild(script)
+    })
+  }
+
+  const initializeMap = async () => {
+    try {
+      console.log('Initializing map...')
+      setLoading(true)
+      setError(null)
+
+      if (!apiKey) {
+        throw new Error('Google Maps API key is not configured')
+      }
+
+      if (!mapContainer) {
+        throw new Error('Map container not found')
+      }
+
+      // Load Google Maps API
+      await loadGoogleMapsScript()
+      setIsScriptLoaded(true)
+
+      // Check for API key errors
+      if (window.google && window.google.maps && window.google.maps.error) {
+        throw new Error(`Google Maps API Error: ${window.google.maps.error}`)
+      }
+
+      // Center on Minnesota (Minneapolis-St. Paul area)
+      const minnesotaCenter = { lat: 44.9778, lng: -93.2650 }
+
+      console.log('Creating map instance...')
+      const mapInstance = new window.google.maps.Map(mapContainer, {
+        center: minnesotaCenter,
+        zoom: 8,
+        styles: [
+          {
+            featureType: 'poi.business',
+            stylers: [{ visibility: 'off' }]
+          }
+        ]
+      })
+
+      console.log('Map created, adding markers...')
+
+      // Add markers for therapists with location data
+      const validTherapists = therapists.filter(t => t.latitude && t.longitude)
+      console.log('Valid therapists with coordinates:', validTherapists.length)
+
+      validTherapists.forEach((therapist, index) => {
+        if (!therapist.latitude || !therapist.longitude) return
+
+        console.log(`Creating marker ${index + 1} for ${therapist.firstName} ${therapist.lastName}`)
+
+        // Create marker
+        const marker = new window.google.maps.Marker({
+          position: { lat: therapist.latitude, lng: therapist.longitude },
+          map: mapInstance,
+          title: `${therapist.firstName} ${therapist.lastName}`,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#3b82f6',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2
+          }
+        })
+
+        // Create info window
+        const infoWindow = new window.google.maps.InfoWindow({
+          content: `
+            <div style="padding: 12px; max-width: 300px;">
+              <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: bold;">${therapist.firstName} ${therapist.lastName}</h3>
+              <p style="margin: 0 0 8px 0; color: #666; font-size: 14px;">${therapist.address}<br>${therapist.city}, ${therapist.state}</p>
+              <div style="margin-bottom: 12px;">
+                <p style="margin: 0 0 4px 0; font-size: 14px; font-weight: 500;">Specializations:</p>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                  ${therapist.specializations.map(spec =>
+                    `<span style="background: #e3f2fd; color: #1976d2; padding: 2px 8px; border-radius: 12px; font-size: 12px;">${spec.specialization.name}</span>`
+                  ).join('')}
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button style="background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;">View Profile</button>
+                <button style="border: 1px solid #ccc; color: #333; background: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;">Message</button>
+              </div>
+            </div>
+          `
+        })
+
+        // Add click listener
+        marker.addListener('click', () => {
+          infoWindow.open(mapInstance, marker)
+        })
+      })
+
+      // Fit bounds to show all markers
+      if (validTherapists.length > 0) {
+        const bounds = new window.google.maps.LatLngBounds()
+        validTherapists.forEach(therapist => {
+          if (therapist.latitude && therapist.longitude) {
+            bounds.extend({ lat: therapist.latitude, lng: therapist.longitude })
+          }
+        })
+        mapInstance.fitBounds(bounds)
+
+        // Ensure minimum zoom level
+        const listener = window.google.maps.event.addListener(mapInstance, 'bounds_changed', () => {
+          if (mapInstance.getZoom() > 12) {
+            mapInstance.setZoom(12)
+          }
+          window.google.maps.event.removeListener(listener)
+        })
+      }
+
+      console.log('Map initialization complete!')
+      setLoading(false)
+    } catch (err) {
+      console.error('Error initializing map:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load map'
+
+      // Check for common API key issues
+      if (errorMessage.includes('API key') || errorMessage.includes('InvalidKey')) {
+        setError('Invalid Google Maps API key. Please check your API key configuration in Google Cloud Console.')
+      } else {
+        setError(errorMessage)
+      }
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    console.log('useEffect triggered - mapContainer:', !!mapContainer, 'therapists.length:', therapists.length)
+
+    if (mapContainer && therapists.length > 0) {
+      console.log('Conditions met, calling initializeMap()')
+      initializeMap()
+    } else {
+      console.log('Conditions not met - mapContainer:', !!mapContainer, 'therapists:', therapists.length)
+    }
+
+    // Cleanup function
+    return () => {
+      console.log('Component cleanup')
+      setLoading(false)
+      setError(null)
+    }
+  }, [mapContainer, therapists, apiKey])
+
+  console.log('Render - apiKey:', !!apiKey, 'loading:', loading, 'error:', error)
+
+  if (!apiKey) {
+    console.log('Rendering: No API key')
     return (
       <div className={`flex items-center justify-center h-96 bg-gray-100 rounded-lg ${className}`}>
         <div className="text-center">
-          <p className="text-red-600 mb-2">⚠️ {error}</p>
+          <p className="text-red-600 mb-2">⚠️ Google Maps API key not found</p>
           <p className="text-sm text-gray-600">
-            To enable maps, add your Google Maps API key to the environment variables.
+            Please add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your environment variables.
           </p>
         </div>
       </div>
     )
   }
 
+  if (loading) {
+    console.log('Rendering: Loading state')
+    return (
+      <div className={`flex items-center justify-center h-96 bg-gray-100 rounded-lg ${className}`}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading map...</p>
+          {isScriptLoaded && <p className="text-sm text-gray-500">Initializing...</p>}
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    console.log('Rendering: Error state')
+    return (
+      <div className={`flex items-center justify-center h-96 bg-gray-100 rounded-lg ${className}`}>
+        <div className="text-center">
+          <p className="text-red-600 mb-2">⚠️ Map Error</p>
+          <p className="text-sm text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={initializeMap}
+            className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  console.log('Rendering: Map container')
   return (
     <div className={className}>
-      <div ref={mapRef} className="w-full h-96 rounded-lg" />
+      <div ref={mapRef} className="w-full h-96 rounded-lg border" />
       <div className="mt-4 text-sm text-gray-600">
         <p>📍 Showing {therapists.filter(t => t.latitude && t.longitude).length} therapists with location data</p>
       </div>
