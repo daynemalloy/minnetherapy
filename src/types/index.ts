@@ -9,4 +9,34 @@ declare module "next-auth" {
 
   interface Session {
     user: User & {
-      i
+      id: string
+      email: string
+      role: string
+    }
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string
+    role: string
+  }
+}
+
+export type UserRole = "PATIENT" | "PROVIDER" | "ADMIN"
+export type MembershipType = "FREE" | "PREMIUM"
+export type AppointmentStatus = "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED"
+
+export interface SearchFilters {
+  location?: {
+    lat: number
+    lng: number
+    radius: number
+  }
+  specializations?: string[]
+  availability?: {
+    dayOfWeek?: number
+    timeOfDay?: string
+  }
+  membershipType?: MembershipType
+}
